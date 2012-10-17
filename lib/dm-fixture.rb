@@ -5,12 +5,15 @@
 # License:: MIT License (http://www.opensource.org/licenses/mit-license.php)
 
 require 'dm-core'
+require 'adapters'
 require 'dm-fixture/fixtures'
 
 if defined?(DataMapper)
+  DataMapper.auto_migrate! # Get the database set up
+  
   class ActiveSupport::TestCase
     include DataMapper::TestFixtures
-    self.fixture_path = "#{Rails.root}/test/fixtures/"
+    self.fixture_path = "#{Rails.root}test/fixtures/"
   end
 
   ActionDispatch::IntegrationTest.fixture_path = ActiveSupport::TestCase.fixture_path

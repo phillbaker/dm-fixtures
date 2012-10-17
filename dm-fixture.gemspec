@@ -9,7 +9,7 @@ Gem::Specification.new do |s|
 
   s.required_rubygems_version = Gem::Requirement.new(">= 0") if s.respond_to? :required_rubygems_version=
   s.authors = ["Phill Baker"]
-  s.date = "2012-10-14"
+  s.date = "2012-10-15"
   s.description = "A rip of some of ActiveRecord's fixtures helpers, ported to DataMapper. For the conservative/slow adopters of dm-sweatshop."
   s.email = "phillbaker@retrodict.com"
   s.extra_rdoc_files = [
@@ -24,7 +24,10 @@ Gem::Specification.new do |s|
     "README",
     "Rakefile",
     "VERSION",
+    "dm-fixture.gemspec",
     "lib/dm-fixture.rb",
+    "lib/dm-fixture/fixture_set/file.rb",
+    "lib/dm-fixture/fixtures.rb",
     "test/helper.rb",
     "test/test_dm-fixture.rb"
   ]

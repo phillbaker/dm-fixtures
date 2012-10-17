@@ -1,13 +1,28 @@
 require 'erb'
+
+begin
+  require 'psych'
+rescue LoadError
+end
+
 require 'yaml'
 require 'zlib'
-
 require 'active_support/dependencies'
+require 'active_support/core_ext/array/wrap'
+require 'active_support/core_ext/object/blank'
+require 'active_support/core_ext/logger'
+require 'active_support/ordered_hash'
 require 'dm-fixture/fixture_set/file'
 
+if defined? ActiveRecord
+  class FixtureClassNotFound < ActiveRecord::ActiveRecordError #:nodoc:
+  end
+else
+  class FixtureClassNotFound < StandardError #:nodoc:
+  end
+end
+
 module DataMapper
-  class FixtureClassNotFound < StandardError; end
-  
   # \Fixtures are a way of organizing data that you want to test against; in short, sample data.
   #
   # They are stored in YAML files, one file per model, which are placed in the directory
@@ -81,7 +96,7 @@ module DataMapper
   #   end
   #
   #   test "find_alt_method_2" do
-  #     assert_equal "Ruby on Rails", @rubyonrails.name
+  #     assert_equal "Ruby on Rails", @rubyonrails.news
   #   end
   #
   # In order to use these methods to access fixtured data within your testcases, you must specify one of the
@@ -147,7 +162,6 @@ module DataMapper
   #
   # When *not* to use transactional fixtures:
   #
-#TODO
   # 1. You're testing whether a transaction works correctly. Nested transactions don't commit until
   #    all parent transactions commit, particularly, the fixtures transaction which is begun in setup
   #    and rolled back in teardown. Thus, you won't be able to verify
@@ -188,7 +202,6 @@ module DataMapper
   #   reginald: # generated id: 324201669
   #     name: Reginald the Pirate
   #
-#TODO
   # Active Record looks at the fixture's model class, discovers the correct
   # primary key, and generates it right before inserting the fixture
   # into the database.
@@ -236,7 +249,6 @@ module DataMapper
   #     name: George the Monkey
   #     pirate: reginald
   #
-#TODO
   # Pow! All is made clear. Active Record reflects on the fixture's model class,
   # finds all the +belongs_to+ associations, and allows you to specify
   # a target *label* for the *association* (monkey: george) rather than
@@ -352,8 +364,8 @@ module DataMapper
   # to the rescue:
   #
   #   george_reginald:
-  #     monkey_id: <%= DataMapper::FixtureSet.identify(:reginald) %>
-  #     pirate_id: <%= DataMapper::FixtureSet.identify(:george) %>
+  #     monkey_id: <%= DataMapper::Fixtures.identify(:reginald) %>
+  #     pirate_id: <%= DataMapper::Fixtures.identify(:george) %>
   #
   # == Support for YAML defaults
   #
@@ -372,30 +384,19 @@ module DataMapper
   #     *DEFAULTS
   #
   # Any fixture labeled "DEFAULTS" is safely ignored.
-  class FixtureSet
-    #--
-    # An instance of FixtureSet is normally stored in a single YAML file and possibly in a folder with the same name.
-    #++
-
+  class Fixtures
     MAX_ID = 2 ** 30 - 1
 
     @@all_cached_fixtures = Hash.new { |h,k| h[k] = {} }
 
-    def self.default_fixture_model_name(fixture_set_name) # :nodoc:
-        convention = DataMapper.repository(:default).adapter.resource_naming_convention
-        # DataMapper::NamingConventions::Resource::Underscored
-        # DataMapper::NamingConventions::Resource::UnderscoredAndPluralized
-        # DataMapper::NamingConventions::Resource::UnderscoredAndPluralizedWithoutModule
-        convention == DataMapper::NamingConventions::Resource::Underscored ? 
-          fixture_set_name.singularize.camelize :
-          fixture_set_name.camelize
-    end
-
-    def self.default_fixture_table_name(fixture_set_name) # :nodoc:
-       # "#{ ActiveRecord::Base.table_name_prefix }"\
-       # "#{ fixture_set_name.tr('/', '_') }"\
-       # "#{ ActiveRecord::Base.table_name_suffix }".to_sym
-       DataMapper.repository(:default).adapter.resource_naming_convention.call(fixture_set_name.tr('/', '_')).to_sym
+    def self.find_table_name(table_name) # :nodoc:
+      convention = DataMapper.repository.adapter.resource_naming_convention #TODO do we want default or something like test?
+      # DataMapper::NamingConventions::Resource::Underscored
+      # DataMapper::NamingConventions::Resource::UnderscoredAndPluralized
+      # DataMapper::NamingConventions::Resource::UnderscoredAndPluralizedWithoutModule
+      convention != DataMapper::NamingConventions::Resource::Underscored ? 
+        table_name.singularize.camelize :
+        table_name.camelize
     end
 
     def self.reset_cache
@@ -422,7 +423,11 @@ module DataMapper
       cache_for_connection(connection).update(fixtures_map)
     end
 
-    def self.instantiate_fixtures(object, fixture_set, load_instances = true)
+    #--
+    # TODO:NOTE: in the next version, the __with_new_arity suffix and
+    #   the method with the old arity will be removed.
+    #++
+    def self.instantiate_fixtures__with_new_arity(object, fixture_set, load_instances = true) # :nodoc:
       if load_instances
         fixture_set.each do |fixture_name, fixture|
           begin
@@ -434,68 +439,89 @@ module DataMapper
       end
     end
 
+    # The use with parameters  <tt>(object, fixture_set_name, fixture_set, load_instances = true)</tt>  is deprecated,  +fixture_set_name+  parameter is not used.
+    # Use as:
+    #
+    #   instantiate_fixtures(object, fixture_set, load_instances = true)
+    def self.instantiate_fixtures(object, fixture_set, load_instances = true, rails_3_2_compatibility_argument = true)
+      unless load_instances == true || load_instances == false
+        ActiveSupport::Deprecation.warn(
+          "ActiveRecord::Fixtures.instantiate_fixtures with parameters (object, fixture_set_name, fixture_set, load_instances = true) is deprecated and shall be removed from future releases.  Use it with parameters (object, fixture_set, load_instances = true) instead (skip fixture_set_name).",
+          caller)
+        fixture_set = load_instances
+        load_instances = rails_3_2_compatibility_argument
+      end
+      instantiate_fixtures__with_new_arity(object, fixture_set, load_instances)
+    end
+
     def self.instantiate_all_loaded_fixtures(object, load_instances = true)
       all_loaded_fixtures.each_value do |fixture_set|
-        instantiate_fixtures(object, fixture_set, load_instances)
+        DataMapper::Fixtures.instantiate_fixtures(object, fixture_set, load_instances)
       end
     end
 
     cattr_accessor :all_loaded_fixtures
     self.all_loaded_fixtures = {}
 
-    def self.create_fixtures(fixtures_directory, fixture_set_names, class_names = {})
-      fixture_set_names = Array(fixture_set_names).map(&:to_s)
-      class_names = class_names.stringify_keys
-
-      # FIXME: Apparently JK uses this.
-      connection = block_given? ? yield : ActiveRecord::Base.connection
-
-      files_to_read = fixture_set_names.reject { |fs_name|
-        fixture_is_cached?(connection, fs_name)
+    def self.create_fixtures(fixtures_directory, table_names, class_names = {})
+      table_names = [table_names].flatten.map { |n| n.to_s }
+      table_names.each { |n|
+        class_names[n.tr('/', '_').to_sym] = n.classify if n.include?('/')
       }
 
+      connection = block_given? ? yield : DataMapper.repository #ActiveRecord::Base.connection
+
+      files_to_read = table_names.reject { |table_name|
+        fixture_is_cached?(connection, table_name)
+      }
+      
       unless files_to_read.empty?
-        connection.disable_referential_integrity do
+        connection.adapter.disable_referential_integrity do
           fixtures_map = {}
 
-          fixture_sets = files_to_read.map do |fs_name|
-            fixtures_map[fs_name] = new( # DataMapper::FixtureSet.new
+          fixture_files = files_to_read.map do |path|
+            table_name = path.tr '/', '_'
+            
+            fixtures_map[path] = DataMapper::Fixtures.new(
               connection,
-              fs_name,
-              class_names[fs_name] || default_fixture_model_name(fs_name),
-              ::File.join(fixtures_directory, fs_name))
+              table_name,
+              !class_names.empty? ? class_names[table_name.to_sym] : table_name.classify,
+              ::File.join(fixtures_directory, path)
+            )
           end
 
           all_loaded_fixtures.update(fixtures_map)
 
-          connection.transaction(:requires_new => true) do
-            fixture_sets.each do |fs|
-              conn = fs.model_class.respond_to?(:connection) ? fs.model_class.connection : connection
-              table_rows = fs.table_rows
+          # Implicitly already in transaction if necessary
+          #connection.transaction do #(:requires_new => true)
+            fixture_files.each do |ff|
+              conn = ff.model_class.respond_to?(:current_connection) ? ff.model_class.current_connection : connection
+              table_rows = ff.table_rows
 
               table_rows.keys.each do |table|
                 conn.delete "DELETE FROM #{conn.quote_table_name(table)}", 'Fixture Delete'
               end
-
-              table_rows.each do |fixture_set_name, rows|
+              puts "table_rows"
+              p table_rows
+              table_rows.each do |table_name,rows|
                 rows.each do |row|
-                  conn.insert_fixture(row, fixture_set_name)
+                  conn.insert_fixture(row, table_name)
                 end
               end
             end
 
             # Cap primary key sequences to max(pk).
             if connection.respond_to?(:reset_pk_sequence!)
-              fixture_sets.each do |fs|
-                connection.reset_pk_sequence!(fs.table_name)
+              table_names.each do |table_name|
+                connection.reset_pk_sequence!(table_name.tr('/', '_'))
               end
             end
-          end
+          #end
 
           cache_fixtures(connection, fixtures_map)
         end
       end
-      cached_fixtures(connection, fixture_set_names)
+      cached_fixtures(connection, table_names)
     end
 
     # Returns a consistent, platform-independent identifier for +label+.
@@ -506,23 +532,24 @@ module DataMapper
 
     attr_reader :table_name, :name, :fixtures, :model_class
 
-    def initialize(connection, name, class_name, path)
-      @fixtures = {} # Ordered hash
-      @name     = name
-      @path     = path
+    def initialize(connection, table_name, class_name, fixture_path)
+      @connection   = connection # instance of DataMapper::Repository (usually DataMapper.repository)
+      @table_name   = table_name
+      @fixture_path = fixture_path
+      @name         = table_name # preserve fixture base name
+      @class_name   = class_name
 
-      if class_name.is_a?(Class) # TODO: Should be an ActiveRecord::Base type class, or any?
-        @model_class = class_name
+      @fixtures     = ActiveSupport::OrderedHash.new
+      @table_name   = DataMapper.repository.adapter.resource_naming_convention.call(@table_name)
+
+      # Should be an AR::Base type class
+      if class_name.is_a?(Class)
+        @table_name   = class_name.table_name
+        @connection   = class_name.connection
+        @model_class  = class_name
       else
-        @model_class = class_name.constantize rescue nil
+        @model_class  = class_name.constantize rescue nil
       end
-      
-      @connection  = ( model_class.respond_to?(:connection) ?
-                       model_class.connection : connection )
-
-      @table_name = ( model_class.respond_to?(:table_name) ?
-                      model_class.table_name :
-                      self.class.default_fixture_table_name(name) )
 
       read_fixture_files
     end
@@ -546,9 +573,7 @@ module DataMapper
     # Return a hash of rows to be inserted. The key is the table, the value is
     # a list of rows to insert to that table.
     def table_rows
-      # No default support for timezones in DataMapper
-      #now = ActiveRecord::Base.default_timezone == :utc ? Time.now.utc : Time.now
-      now = Time.now
+      now = Time.now #ActiveRecord::Base.default_timezone == :utc ? Time.now.utc : Time.now
       now = now.to_s(:db)
 
       # allow a standard key to be used for doing defaults in YAML
@@ -560,11 +585,11 @@ module DataMapper
       rows[table_name] = fixtures.map do |label, fixture|
         row = fixture.to_hash
 
-        if model_class #&& model_class < ActiveRecord::Model
+        if model_class #&& model_class < ActiveRecord::Base #TODO make sure that model class include's DataMapper::Resource
           # fill in timestamp columns if they aren't specified and the model is set to record_timestamps
           if model_class.record_timestamps
-            timestamp_column_names.each do |c_name|
-              row[c_name] = now unless row.key?(c_name)
+            timestamp_column_names.each do |name|
+              row[name] = now unless row.key?(name)
             end
           end
 
@@ -575,7 +600,7 @@ module DataMapper
 
           # generate a primary key if necessary
           if has_primary_key_column? && !row.include?(primary_key_name)
-            row[primary_key_name] = DataMapper::FixtureSet.identify(label)
+            row[primary_key_name] = DataMapper::Fixtures.identify(label)
           end
 
           # If STI is used, find the correct subclass for association reflection
@@ -598,15 +623,15 @@ module DataMapper
                   row[association.foreign_type] = $1
                 end
 
-                row[fk_name] = DataMapper::FixtureSet.identify(value)
+                row[fk_name] = DataMapper::Fixtures.identify(value)
               end
             when :has_and_belongs_to_many
               if (targets = row.delete(association.name.to_s))
                 targets = targets.is_a?(Array) ? targets : targets.split(/\s*,\s*/)
-                table_name = association.join_table
+                table_name = association.options[:join_table]
                 rows[table_name].concat targets.map { |target|
                   { association.foreign_key             => row[primary_key_name],
-                    association.association_foreign_key => DataMapper::FixtureSet.identify(target) }
+                    association.association_foreign_key => DataMapper::Fixtures.identify(target) }
                 }
               end
             end
@@ -642,21 +667,21 @@ module DataMapper
       end
 
       def read_fixture_files
-        yaml_files = Dir["#{@path}/**/*.yml"].select { |f|
+        yaml_files = Dir["#{@fixture_path}/**/*.yml"].select { |f|
           ::File.file?(f)
         } + [yaml_file_path]
 
         yaml_files.each do |file|
-          FixtureSet::File.open(file) do |fh|
-            fh.each do |fixture_name, row|
-              fixtures[fixture_name] = DataMapper::Fixture.new(row, model_class)
+          Fixtures::File.open(file) do |fh|
+            fh.each do |name, row|
+              fixtures[name] = DataMapper::Fixture.new(row, model_class)
             end
           end
         end
       end
 
       def yaml_file_path
-        "#{@path}.yml"
+        "#{@fixture_path}.yml"
       end
 
   end
@@ -713,7 +738,7 @@ module DataMapper
       class_attribute :fixture_table_names
       class_attribute :fixture_class_names
       class_attribute :use_transactional_fixtures
-      class_attribute :use_instantiated_fixtures # true, false, or :no_instances
+      class_attribute :use_instantiated_fixtures   # true, false, or :no_instances
       class_attribute :pre_loaded_fixtures
 
       self.fixture_table_names = []
@@ -721,43 +746,27 @@ module DataMapper
       self.use_instantiated_fixtures = false
       self.pre_loaded_fixtures = false
 
-      self.fixture_class_names = Hash.new do |h, fixture_set_name|
-        h[fixture_set_name] = DataMapper::FixtureSet.default_fixture_model_name(fixture_set_name)
+      self.fixture_class_names = Hash.new do |h, table_name|
+        h[table_name] = DataMapper::Fixtures.find_table_name(table_name)
       end
     end
 
     module ClassMethods
-      # Sets the model class for a fixture when the class name cannot be inferred from the fixture name.
-      #
-      # Examples:
-      #
-      #   set_fixture_class :some_fixture        => SomeModel,
-      #                     'namespaced/fixture' => Another::Model
-      #
-      # The keys must be the fixture names, that coincide with the short paths to the fixture files.
-      #--
-      # It is also possible to pass the class name instead of the class:
-      #   set_fixture_class 'some_fixture' => 'SomeModel'
-      # I think this option is redundant, i propose to deprecate it.
-      # Isn't it easier to always pass the class itself?
-      # (2011-12-20 alexeymuranov)
-      #++
       def set_fixture_class(class_names = {})
-        self.fixture_class_names = self.fixture_class_names.merge(class_names.stringify_keys)
+        self.fixture_class_names = self.fixture_class_names.merge(class_names)
       end
 
-      def fixtures(*fixture_set_names)
-        if fixture_set_names.first == :all
-          fixture_set_names = Dir["#{fixture_path}/**/*.yml"].map { |f|
-            File.basename f, '.yml'
-          }
+      def fixtures(*fixture_names)
+        if fixture_names.first == :all
+          fixture_names = Dir["#{fixture_path}/**/*.{yml}"]
+          fixture_names.map! { |f| f[(fixture_path.size + 1)..-5] }
         else
-          fixture_set_names = fixture_set_names.flatten.map { |n| n.to_s }
+          fixture_names = fixture_names.flatten.map { |n| n.to_s }
         end
 
-        self.fixture_table_names |= fixture_set_names
-        require_fixture_classes(fixture_set_names)
-        setup_fixture_accessors(fixture_set_names)
+        self.fixture_table_names |= fixture_names
+        require_fixture_classes(fixture_names)
+        setup_fixture_accessors(fixture_names)
       end
 
       def try_to_load_dependency(file_name)
@@ -767,50 +776,45 @@ module DataMapper
 
         # Let's warn in case this is a subdependency, otherwise
         # subdependency error messages are totally cryptic
-        if ActiveRecord::Base.logger
-          ActiveRecord::Base.logger.warn("Unable to load #{file_name}, underlying cause #{e.message} \n\n #{e.backtrace.join("\n")}")
+        if DataMapper.logger
+          DataMapper.logger.push("Unable to load #{file_name}, underlying cause #{e.message} \n\n #{e.backtrace.join("\n")}")
         end
       end
 
-      def require_fixture_classes(fixture_set_names = nil)
-        if fixture_set_names
-          fixture_set_names = fixture_set_names.map { |n| n.to_s }
-        else
-          fixture_set_names = fixture_table_names
-        end
-
-        fixture_set_names.each do |file_name|
-          file_name = file_name.singularize if DataMapper.repository(:default).adapter.resource_naming_convention == DataMapper::NamingConventions::Resource::Underscored
+      def require_fixture_classes(fixture_names = nil)
+        (fixture_names || fixture_table_names).each do |fixture_name|
+          file_name = fixture_name.to_s
+          file_name = file_name.singularize if DataMapper.repository.adapter.resource_naming_convention != DataMapper::NamingConventions::Resource::Underscored
           try_to_load_dependency(file_name)
         end
       end
 
-      def setup_fixture_accessors(fixture_set_names = nil)
-        fixture_set_names = Array(fixture_set_names || fixture_table_names)
+      def setup_fixture_accessors(fixture_names = nil)
+        fixture_names = Array.wrap(fixture_names || fixture_table_names)
         methods = Module.new do
-          fixture_set_names.each do |fs_name|
-            fs_name = fs_name.to_s
-            accessor_name = fs_name.tr('/', '_').to_sym
+          fixture_names.each do |fixture_name|
+            fixture_name = fixture_name.to_s.tr('./', '_')
 
-            define_method(accessor_name) do |*fixture_names|
-              force_reload = fixture_names.pop if fixture_names.last == true || fixture_names.last == :reload
+            define_method(fixture_name) do |*fixtures|
+              force_reload = fixtures.pop if fixtures.last == true || fixtures.last == :reload
 
-              @fixture_cache[fs_name] ||= {}
+              @fixture_cache[fixture_name] ||= {}
 
-              instances = fixture_names.map do |f_name|
-                f_name = f_name.to_s
-                @fixture_cache[fs_name].delete(f_name) if force_reload
+              instances = fixtures.map do |fixture|
+                @fixture_cache[fixture_name].delete(fixture) if force_reload
 
-                if @loaded_fixtures[fs_name][f_name]
-                  @fixture_cache[fs_name][f_name] ||= @loaded_fixtures[fs_name][f_name].find
+                if @loaded_fixtures[fixture_name][fixture.to_s]
+                  ActiveRecord::IdentityMap.without do
+                    @fixture_cache[fixture_name][fixture] ||= @loaded_fixtures[fixture_name][fixture.to_s].find
+                  end
                 else
-                  raise StandardError, "No fixture named '#{f_name}' found for fixture set '#{fs_name}'"
+                  raise StandardError, "No fixture with name '#{fixture}' found for table '#{fixture_name}'"
                 end
               end
 
               instances.size == 1 ? instances.first : instances
             end
-            private accessor_name
+            private fixture_name
           end
         end
         include methods
@@ -828,12 +832,14 @@ module DataMapper
     end
 
     def run_in_transaction?
-      use_transactional_fixtures &&
+      use_transactional_fixtures && defined? DataMapper::Transaction && #make sure we have dm-transactions
         !self.class.uses_transaction?(method_name)
     end
 
     def setup_fixtures
-      return if ActiveRecord::Base.configurations.blank?
+      # Make sure we're connected to a DB
+      # return unless !ActiveRecord::Base.configurations.blank?
+      return if DataMapper::Repository.adapters.blank?
 
       if pre_loaded_fixtures && !use_transactional_fixtures
         raise RuntimeError, 'pre_loaded_fixtures requires use_transactional_fixtures'
@@ -842,7 +848,7 @@ module DataMapper
       @fixture_cache = {}
       @fixture_connections = []
       @@already_loaded_fixtures ||= {}
-
+      
       # Load fixtures once and begin transaction.
       if run_in_transaction?
         if @@already_loaded_fixtures[self.class]
@@ -852,12 +858,19 @@ module DataMapper
           @@already_loaded_fixtures[self.class] = @loaded_fixtures
         end
         @fixture_connections = enlist_fixture_connections
-        @fixture_connections.each do |connection|
-          connection.begin_transaction :joinable => false
+        @fixture_connections.each do |repository|
+          # http://git.io/2QmaGg
+          # connection.increment_open_transactions
+          # connection.transaction_joinable = false
+          # connection.begin_db_transaction
+          transaction = DataMapper::Transaction.new(repository)
+          transaction.begin
+          #repository.adapter.push_transaction(transaction)
+          repository.push_transaction(transaction)
         end
       # Load fixtures for every test.
       else
-        DataMapper::FixtureSet.reset_cache
+        DataMapper::Fixtures.reset_cache
         @@already_loaded_fixtures[self.class] = nil
         @loaded_fixtures = load_fixtures
       end
@@ -867,29 +880,41 @@ module DataMapper
     end
 
     def teardown_fixtures
-      return unless defined?(DataMapper) && !ActiveRecord::Base.configurations.blank?
-
-      unless run_in_transaction?
-        DataMapper::FixtureSet.reset_cache
-      end
+      #                                     ActiveRecord::Base.configurations.blank?
+      return unless defined?(DataMapper) && !DataMapper::Repository.adapters.blank?
 
       # Rollback changes if a transaction is active.
       if run_in_transaction?
-        @fixture_connections.each do |connection|
-          connection.rollback_transaction if connection.transaction_open?
+        @fixture_connections.each do |repository|
+          # if connection.open_transactions != 0
+          #   connection.rollback_db_transaction
+          #   connection.decrement_open_transactions
+          # end
+          # adapter = repository.adapter
+          while repository.current_transaction
+            repository.current_transaction.rollback
+            repository.pop_transaction
+          end
         end
         @fixture_connections.clear
+      else
+        DataMapper::Fixtures.reset_cache
       end
-      ActiveRecord::Base.clear_active_connections!
+      
+      # 
+      # ActiveRecord::Base.clear_active_connections!
     end
 
     def enlist_fixture_connections
-      ActiveRecord::Base.connection_handler.connection_pools.map(&:connection)
+      #ActiveRecord::Base.connection_handler.connection_pools.values.map(&:connection)
+      DataMapper::Repository.adapters.values 
+      #TODO think I actually want DataObjects stuff: https://groups.google.com/d/msg/datamapper/16DJGo9DLSI/oqjWvrnJp3oJ
+      # or http://stackoverflow.com/a/11594219/1749924
     end
 
     private
       def load_fixtures
-        fixtures = DataMapper::FixtureSet.create_fixtures(fixture_path, fixture_table_names, fixture_class_names)
+        fixtures = DataMapper::Fixtures.create_fixtures(fixture_path, fixture_table_names, fixture_class_names)
         Hash[fixtures.map { |f| [f.name, f] }]
       end
 
@@ -898,16 +923,16 @@ module DataMapper
 
       def instantiate_fixtures
         if pre_loaded_fixtures
-          raise RuntimeError, 'Load fixtures before instantiating them.' if DataMapper::FixtureSet.all_loaded_fixtures.empty?
+          raise RuntimeError, 'Load fixtures before instantiating them.' if DataMapper::Fixtures.all_loaded_fixtures.empty?
           unless @@required_fixture_classes
-            self.class.require_fixture_classes DataMapper::FixtureSet.all_loaded_fixtures.keys
+            self.class.require_fixture_classes DataMapper::Fixtures.all_loaded_fixtures.keys
             @@required_fixture_classes = true
           end
-          DataMapper::FixtureSet.instantiate_all_loaded_fixtures(self, load_instances?)
+          DataMapper::Fixtures.instantiate_all_loaded_fixtures(self, load_instances?)
         else
           raise RuntimeError, 'Load fixtures before instantiating them.' if @loaded_fixtures.nil?
           @loaded_fixtures.each_value do |fixture_set|
-            DataMapper::FixtureSet.instantiate_fixtures(self, fixture_set, load_instances?)
+            DataMapper::Fixtures.instantiate_fixtures(self, fixture_set, load_instances?)
           end
         end
       end
