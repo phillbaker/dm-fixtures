@@ -2,6 +2,14 @@
 
 A rip of some of ActiveRecord's fixtures helpers, ported to DataMapper. For the conservative/slow adopters of dm-sweatshop.
 
+== Install
+
+ # Gemfile
+ # Put dm-fixture in dev + test to make its rake tasks available by default - only in :test is not available at the command line
+ group :development, :test do
+   gem 'dm-fixture', :path => '../dm-fixture', :require => 'dm-fixture'
+ end
+
 == Contributing to dm-fixture
  
 * Check out the latest master to make sure the feature hasn't been implemented or the bug hasn't been fixed yet.
