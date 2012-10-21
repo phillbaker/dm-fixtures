@@ -2,13 +2,19 @@
 
 A rip of some of ActiveRecord's fixtures helpers, ported to DataMapper. For the conservative/slow adopters of dm-sweatshop.
 
-== Install
+== Install & Run
 
  # Gemfile
  # Put dm-fixture in dev + test to make its rake tasks available by default - only in :test is not available at the command line
  group :development, :test do
    gem 'dm-fixture', :path => '../dm-fixture', :require => 'dm-fixture'
  end
+
+ # This will load all the fixtures via test:prepare and run all tests
+ $ RAILS_ENV=test bundle exec rake test
+
+ # In addition, this will run only unit tests and show backtraces
+ $ RAILS_ENV=test BACKTRACE=yes bundle exec rake test:units
 
 == Contributing to dm-fixture
  
@@ -21,9 +27,9 @@ A rip of some of ActiveRecord's fixtures helpers, ported to DataMapper. For the 
 * Please try not to mess with the Rakefile, version, or history. If you want to have your own version, or is otherwise necessary, that is fine, but please isolate to its own commit so I can cherry-pick around it.
 
 == Support
+
 This is open source, so feel free to branch. Admittedly, this does not fix the issue of updating the authoritative repo/official gem. So, I commit to maintaining this branch, and if I no longer am able to, or want to do that, I'll transfer responsibility - just shoot me an e-mail.
 
 == Copyright
 
-Copyright (c) 2012 Phill Baker. See LICENSE for
-further details.
+Copyright (c) 2012 Phill Baker. See LICENSE for further details (MIT).

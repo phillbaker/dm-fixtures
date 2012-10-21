@@ -7,9 +7,12 @@
 require 'dm-core'
 require 'adapters'
 require 'dm-fixture/fixtures'
+require 'dm-fixture/railtie'
 
 if defined?(DataMapper)
-  DataMapper.auto_migrate! # Get the database set up
+  # Follow ActiveRecord's model, put this in a pre-run rake task, just like starting the server
+  # p DataMapper::Model.descendants.entries #TODO below doesn't work because model classes aren't required? => they are in rails init...
+  # DataMapper.auto_migrate! # Get the database set up
   
   class ActiveSupport::TestCase
     include DataMapper::TestFixtures

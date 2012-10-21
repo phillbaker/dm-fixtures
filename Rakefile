@@ -14,8 +14,8 @@ require 'rake'
 require 'jeweler'
 Jeweler::Tasks.new do |gem|
   # gem is a Gem::Specification... see http://docs.rubygems.org/read/chapter/20 for more options
-  gem.name = "dm-fixture"
-  gem.homepage = "http://github.com/phillbaker/dm-fixture"
+  gem.name = "dm-fixtures"
+  gem.homepage = "http://github.com/phillbaker/dm-fixtures"
   gem.license = "MIT"
   gem.summary = %Q{Old school fixtures for DataMapper, specifically with dm-rails.}
   gem.description = %Q{A rip of some of ActiveRecord's fixtures helpers, ported to DataMapper. For the conservative/slow adopters of dm-sweatshop.}

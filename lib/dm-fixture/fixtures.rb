@@ -497,15 +497,17 @@ module DataMapper
             fixture_files.each do |ff|
               conn = ff.model_class.respond_to?(:current_connection) ? ff.model_class.current_connection : connection
               table_rows = ff.table_rows
-
+              
               table_rows.keys.each do |table|
-                conn.delete "DELETE FROM #{conn.quote_table_name(table)}", 'Fixture Delete'
+                # Delete all fixtures from table using their id
+                #conn.delete "DELETE FROM #{conn.quote_table_name(table)}", 'Fixture Delete'
+                success = ff.model_class.destroy!
               end
-              puts "table_rows"
-              p table_rows
+              
               table_rows.each do |table_name,rows|
                 rows.each do |row|
-                  conn.insert_fixture(row, table_name)
+                  #conn.insert_fixture(row, table_name) #TODO
+                  ff.model_class.create!(row.symbolize_keys)
                 end
               end
             end
@@ -542,7 +544,7 @@ module DataMapper
       @fixtures     = ActiveSupport::OrderedHash.new
       @table_name   = DataMapper.repository.adapter.resource_naming_convention.call(@table_name)
 
-      # Should be an AR::Base type class
+      # Should be a class that: `include DataMapper::Resource`
       if class_name.is_a?(Class)
         @table_name   = class_name.table_name
         @connection   = class_name.connection
@@ -584,10 +586,10 @@ module DataMapper
 
       rows[table_name] = fixtures.map do |label, fixture|
         row = fixture.to_hash
-
-        if model_class #&& model_class < ActiveRecord::Base #TODO make sure that model class include's DataMapper::Resource
-          # fill in timestamp columns if they aren't specified and the model is set to record_timestamps
-          if model_class.record_timestamps
+        
+        if model_class && DataMapper::Model.descendants.entries.include?(model_class) #model_class < ActiveRecord::Base
+          # fill in timestamp columns if they aren't specified and the model has appropriately named columns
+          if has_timestamp_columns?
             timestamp_column_names.each do |name|
               row[name] = now unless row.key?(name)
             end
@@ -611,12 +613,12 @@ module DataMapper
               model_class
             end
 
-          reflection_class.reflect_on_all_associations.each do |association|
+          reflect_on_all_associations(reflection_class).each do |association|
             case association.macro
             when :belongs_to
               # Do not replace association name with association foreign key if they are named the same
               fk_name = (association.options[:foreign_key] || "#{association.name}_id").to_s
-
+              
               if association.name.to_s != fk_name && value = row.delete(association.name.to_s)
                 if association.options[:polymorphic] && value.sub!(/\s*\(([^\)]*)\)\s*$/, "")
                   # support polymorphic belongs_to as "label (Type)"
@@ -644,26 +646,79 @@ module DataMapper
     end
 
     private
+      # Returns primary key name as string, can be composite key with multiple columns
       def primary_key_name
-        @primary_key_name ||= model_class && model_class.primary_key
+        #TODO don't know that the multiple column thing actually reflects datamapper realities
+        @primary_key_name ||= model_class && model_class.key.collect{|c| c.name }.join('-')
       end
 
       def has_primary_key_column?
-        @has_primary_key_column ||= primary_key_name &&
-          model_class.columns.any? { |c| c.name == primary_key_name }
+        @has_primary_key_column ||= primary_key_name() &&
+          model_class.properties.any? { |c| c.name.to_s == primary_key_name }
+      end
+
+      def has_timestamp_columns?
+        !timestamp_column_names.empty?
       end
 
       def timestamp_column_names
+        # comparison to strings here means all names are in strings
         @timestamp_column_names ||=
           %w(created_at created_on updated_at updated_on) & column_names
       end
 
       def inheritance_column_name
-        @inheritance_column_name ||= model_class && model_class.inheritance_column
+        @inheritance_column_name ||= model_class && model_class.properties.select{|prop| prop.kind_of? DataMapper::Property::Discriminator }.collect{|c| c.name.to_s }.first
       end
 
       def column_names
-        @column_names ||= @connection.columns(@table_name).collect { |c| c.name }
+        @column_names ||= model_class.properties.collect{|prop| prop.name.to_s } #@connection.columns(@table_name).collect { |c| c.name }
+      end
+
+      # http://pastie.org/pastes/233178
+      # Semi-equivalent of ActiveRecord's reflect_on_all_associations method
+      def reflect_on_all_associations klass
+        klass.relationships.collect do |relationship|
+          # All can be child/parent
+          # ManyToMany
+          # ManyToOne
+          # OneToMany
+          # OneToOne
+          #TODO :has_and_belongs_to_many
+          if relationship.kind_of?(::DataMapper::Associations::ManyToOne::Relationship) && relationship.child_model? #relationship.options[:min] == 1 && relationship.options[:max] == 1
+            macro = :belongs_to
+            if relationship.options[:class_name]
+              # In a belongs_to, the side with the class name uses
+              # the parent model, but child key for the foreign key...
+              class_name = relationship.parent_model.to_s
+              primary_key_name = relationship.child_key.entries.first.name
+            else
+              class_name = relationship.child_model.to_s
+              primary_key_name = relationship.parent_key.entries.first.name
+            end
+          else
+            macro = :has_one
+            if relationship.options[:class_name]
+              # but on the has_one side, it's the *child* model that
+              # uses the child key for the foreign key.  Weirdness.
+              class_name = relationship.child_model.to_s
+              primary_key_name = relationship.child_key.entries.first.name
+            else
+              class_name = relationship.parent_model.to_s
+              primary_key_name = relationship.parent_key.entries.first.name
+            end
+          end
+          OpenStruct.new(
+            :name => relationship.name,
+            :options => {
+              #:foreign_key => , # Ignore, let the calling code infer: {name}_id
+              :polymorphic => false # Hard code for now
+            },
+            :class_name => class_name,
+            :primary_key_name => primary_key_name,
+            :macro => macro
+          )
+        end
       end
 
       def read_fixture_files
@@ -865,7 +920,6 @@ module DataMapper
           # connection.begin_db_transaction
           transaction = DataMapper::Transaction.new(repository)
           transaction.begin
-          #repository.adapter.push_transaction(transaction)
           repository.push_transaction(transaction)
         end
       # Load fixtures for every test.
