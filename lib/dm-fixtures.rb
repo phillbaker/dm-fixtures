@@ -6,8 +6,8 @@
 
 require 'dm-core'
 require 'adapters'
-require 'dm-fixture/fixtures'
-require 'dm-fixture/railtie'
+require 'dm-fixtures/fixtures'
+require 'dm-fixtures/railtie'
 
 if defined?(DataMapper)
   # Follow ActiveRecord's model, put this in a pre-run rake task, just like starting the server

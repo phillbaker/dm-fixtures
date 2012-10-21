@@ -12,7 +12,7 @@ require 'active_support/core_ext/array/wrap'
 require 'active_support/core_ext/object/blank'
 require 'active_support/core_ext/logger'
 require 'active_support/ordered_hash'
-require 'dm-fixture/fixture_set/file'
+require 'dm-fixtures/fixture_set/file'
 
 if defined? ActiveRecord
   class FixtureClassNotFound < ActiveRecord::ActiveRecordError #:nodoc:

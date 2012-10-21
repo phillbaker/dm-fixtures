@@ -4,12 +4,12 @@
 # -*- encoding: utf-8 -*-
 
 Gem::Specification.new do |s|
-  s.name = "dm-fixture"
+  s.name = "dm-fixtures"
   s.version = "0.1.0"
 
   s.required_rubygems_version = Gem::Requirement.new(">= 0") if s.respond_to? :required_rubygems_version=
   s.authors = ["Phill Baker"]
-  s.date = "2012-10-18"
+  s.date = "2012-10-21"
   s.description = "A rip of some of ActiveRecord's fixtures helpers, ported to DataMapper. For the conservative/slow adopters of dm-sweatshop."
   s.email = "phillbaker@retrodict.com"
   s.extra_rdoc_files = [
@@ -25,16 +25,16 @@ Gem::Specification.new do |s|
     "Rakefile",
     "VERSION",
     "dm-fixture.gemspec",
+    "lib/adapters.rb",
     "lib/dm-fixture.rb",
     "lib/dm-fixture/fixture_set/file.rb",
     "lib/dm-fixture/fixtures.rb",
     "lib/dm-fixture/railtie.rb",
     "lib/dm-fixture/railties/testing.rake",
-#    "lib/tasks/testing.rake",
     "test/helper.rb",
     "test/test_dm-fixture.rb"
   ]
-  s.homepage = "http://github.com/phillbaker/dm-fixture"
+  s.homepage = "http://github.com/phillbaker/dm-fixtures"
   s.licenses = ["MIT"]
   s.require_paths = ["lib"]
   s.rubygems_version = "1.8.24"

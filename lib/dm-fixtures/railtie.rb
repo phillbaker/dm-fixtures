@@ -16,7 +16,7 @@ module Rails
         # path = File.join(File.dirname(__FILE__), 'tasks', '*.rake')
         # puts "here" + path
         # Dir[path].each { |f| load f }
-        load 'dm-fixture/railties/testing.rake'
+        load 'dm-fixtures/railties/testing.rake'
       end
     end
   end
